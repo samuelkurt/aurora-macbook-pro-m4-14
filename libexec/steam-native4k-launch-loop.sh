@@ -61,6 +61,27 @@ AURORA_STEAM_CONSOLE_LOG=${AURORA_STEAM_CONSOLE_LOG:-${XDG_STATE_HOME:-$HOME/.lo
 umask 077
 mkdir -p -- "$(dirname -- "$AURORA_STEAM_CONSOLE_LOG")"
 exec >> "$AURORA_STEAM_CONSOLE_LOG" 2>&1
+# Proton's x86-64 and i386 lsteamclient load the client library from the fixed
+# paths ~/.steam/sdk64/steamclient.so and ~/.steam/sdk32/steamclient.so, and a
+# Windows game stops on an assertion in steamclient_init when the load fails.
+# Valve's steam.sh points those links at the client's linux64 and linux32 on
+# every start; the native entry point skips that script, so link them here. The
+# client can gain those directories in a later update, so a link may dangle
+# until then. A real file or directory at either path is left alone.
+mkdir -p -- "$HOME/.steam"
+for aurora_bits in 32 64; do
+ aurora_sdk=$HOME/.steam/sdk$aurora_bits
+ aurora_target=$AURORA_STEAM_ROOT/linux$aurora_bits
+ if [ -L "$aurora_sdk" ] || [ ! -e "$aurora_sdk" ]; then
+  if [ "$(readlink -- "$aurora_sdk" 2>/dev/null || true)" != "$aurora_target" ]; then
+   ln -sfn -- "$aurora_target" "$aurora_sdk" ||
+    echo "Could not link $aurora_sdk to $aurora_target" >&2
+  fi
+ else
+  echo "Leaving $aurora_sdk unchanged: it is not a symbolic link" >&2
+ fi
+done
+unset aurora_bits aurora_sdk aurora_target
 # Vendor steam.sh documents exit42 as an explicit request to restart.
 # Keep the parent and every requested restart inside this inherited4K tree.
 exec "$AURORA_USERPAGES_LAUNCHER" 4k /bin/bash -c '
